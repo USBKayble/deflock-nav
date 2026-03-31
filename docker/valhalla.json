@@ -1,0 +1,28 @@
+{
+  "tile_dir": "/valhalla_tiles",
+  "tile_extract": "/valhalla_tiles/valhalla_tiles.tar",
+  "mjolnir": {
+    "concurrency": 1,
+    "tile_dir": "/valhalla_tiles",
+    "admin": "/valhalla_tiles/admin.sqlite",
+    "timezone": "/valhalla_tiles/tz_world.sqlite",
+    "hierarchy": true,
+    "shortcuts": true
+  },
+  "loki": {
+    "actions": ["route", "locate", "status"],
+    "logging": { "long_request": 5.0 },
+    "service": { "proxy": "ipc:///tmp/loki" }
+  },
+  "thor": {
+    "logging": { "long_request": 10.0 },
+    "service": { "proxy": "ipc:///tmp/thor" }
+  },
+  "odin": {
+    "logging": { "long_request": 5.0 },
+    "service": { "proxy": "ipc:///tmp/odin" }
+  },
+  "httpd": {
+    "service": { "loopback": "tcp://*:8002", "interrupt": "ipc:///tmp/interrupt" }
+  }
+}

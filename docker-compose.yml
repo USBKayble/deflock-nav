@@ -1,0 +1,78 @@
+version: "3.8"
+
+services:
+  # PostGIS database for camera data
+  postgis:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: deflock_nav
+      POSTGRES_USER: deflock
+      POSTGRES_PASSWORD: localdev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deflock"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Valhalla routing engine
+  valhalla:
+    image: ghcr.io/gis-ops/valhalla:latest
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./data/valhalla:/valhalla_tiles
+      - ./docker/valhalla.json:/valhalla.json
+    environment:
+      - valhalla_tiles_dir=/valhalla_tiles
+    # Build tiles on first run:
+    # docker compose run valhalla valhalla_build_tiles -c /valhalla.json /data/region.osm.pbf
+
+  # FastAPI backend
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://deflock:localdev@postgis:5432/deflock_nav
+      - REDIS_URL=redis://redis:6379
+      - VALHALLA_URL=http://valhalla:8002
+      - ADMIN_TOKEN=localdev
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./src/api:/app/src/api
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Vue frontend (dev mode)
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./src/frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  postgis_data:
+  redis_data:
