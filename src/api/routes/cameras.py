@@ -2,7 +2,7 @@ import httpx
 import json
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from src.api.database import get_db
 from src.api.models import Camera
 from src.api.config import settings
@@ -19,36 +19,39 @@ async def fetch_cameras_from_overpass(bbox: str) -> list[dict]:
     );
     out body;
     """
-    async with httpx.AsyncClient() as client:
-        res = await client.post(
-            settings.OVERPASS_URL,
-            headers={'Content-Type': 'application/x-www-form-urlencoded'},
-            data={'data': query}
-        )
-        if res.status_code != 200:
-            return []
-        data = res.json()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.post(
+                settings.OVERPASS_URL,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                data={'data': query}
+            )
+            if res.status_code != 200:
+                return []
+            data = res.json()
+    except httpx.RequestError:
+        return []
 
-        cameras = []
-        for el in data.get('elements', []):
-            if el.get('type') == 'node' and el.get('tags'):
-                tags = el['tags']
-                direction = None
-                if 'camera:direction' in tags:
-                    try:
-                        direction = int(tags['camera:direction'])
-                    except ValueError:
-                        pass
+    cameras = []
+    for el in data.get('elements', []):
+        if el.get('type') == 'node' and el.get('tags'):
+            tags = el['tags']
+            direction = None
+            if 'camera:direction' in tags:
+                try:
+                    direction = int(tags['camera:direction'])
+                except ValueError:
+                    pass
 
-                cameras.append({
-                    "osm_id": el['id'],
-                    "lat": el['lat'],
-                    "lon": el['lon'],
-                    "type": tags.get('surveillance:type', 'camera'),
-                    "direction": direction,
-                    "operator": tags.get('operator', 'Unknown')
-                })
-        return cameras
+            cameras.append({
+                "osm_id": el['id'],
+                "lat": el['lat'],
+                "lon": el['lon'],
+                "type": tags.get('surveillance:type', 'camera'),
+                "direction": direction,
+                "operator": tags.get('operator', 'Unknown')
+            })
+    return cameras
 
 async def sync_cameras_to_db(db: AsyncSession, bbox: str):
     cameras = await fetch_cameras_from_overpass(bbox)
