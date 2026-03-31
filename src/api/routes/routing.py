@@ -159,13 +159,16 @@ async def calculate_route(request: RouteRequest):
     coords_str = f"{request.start.lon},{request.start.lat};{request.end.lon},{request.end.lat}"
     url = f"{settings.OSRM_URL}/route/v1/driving/{coords_str}?overview=full&alternatives={request.alternatives - 1}&geometries=polyline"
 
-    async with httpx.AsyncClient() as client:
-        res = await client.get(url)
-        if res.status_code != 200:
-            raise HTTPException(status_code=res.status_code, detail="OSRM Error")
-        data = res.json()
-        if data.get("code") != "Ok":
-            raise HTTPException(status_code=400, detail=f"OSRM Error: {data.get('code')}")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.get(url)
+            if res.status_code != 200:
+                raise HTTPException(status_code=res.status_code, detail="OSRM Error")
+            data = res.json()
+            if data.get("code") != "Ok":
+                raise HTTPException(status_code=400, detail=f"OSRM Error: {data.get('code')}")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"OSRM Request failed: {e}")
 
     routes = []
     for i, r in enumerate(data.get("routes", [])):
