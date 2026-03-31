@@ -25,5 +25,8 @@ COPY src/api ./src/api
 # Copy the built Vue frontend from the first stage
 COPY --from=frontend-builder /app/src/frontend/dist ./src/frontend/dist
 
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
