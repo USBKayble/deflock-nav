@@ -1,75 +1,387 @@
 <template>
   <div class="app">
-    <div class="controls">
-      <input v-model="start.lat" placeholder="Start lat" />
-      <input v-model="start.lon" placeholder="Start lon" />
-      <input v-model="end.lat" placeholder="End lat" />
-      <input v-model="end.lon" placeholder="End lon" />
-      <select v-model="avoidanceLevel">
-        <option value="relaxed">Relaxed</option>
-        <option value="balanced">Balanced</option>
-        <option value="strict">Strict</option>
-        <option value="paranoid">Paranoid</option>
-      </select>
-      <button @click="calculateRoute" :disabled="loading">
-        {{ loading ? 'Calculating...' : 'Find Route' }}
-      </button>
-    </div>
+    <div class="sidebar">
+      <h1>DeFlock Nav</h1>
+      <p class="subtitle">Routes that avoid surveillance</p>
 
-    <div v-if="error" class="error">{{ error }}</div>
+      <div class="form">
+        <label>Start</label>
+        <input
+          v-model="startLat"
+          type="number"
+          step="0.0001"
+          placeholder="Latitude"
+        />
+        <input
+          v-model="startLon"
+          type="number"
+          step="0.0001"
+          placeholder="Longitude"
+        />
 
-    <div v-if="routes.length" class="route-list">
-      <div
-        v-for="route in routes"
-        :key="route.id"
-        :class="{ recommended: route.is_recommended }"
-        @click="selectedRoute = route"
-      >
-        <span v-if="route.is_recommended">⭐ </span>
-        {{ formatTime(route.duration_seconds) }}
-        | {{ route.camera_exposure.total_cameras }} cameras
-        | Score: {{ route.camera_exposure.exposure_score.toFixed(1) }}
+        <label>End</label>
+        <input
+          v-model="endLat"
+          type="number"
+          step="0.0001"
+          placeholder="Latitude"
+        />
+        <input
+          v-model="endLon"
+          type="number"
+          step="0.0001"
+          placeholder="Longitude"
+        />
+
+        <button @click="findRoute" :disabled="loading">
+          {{ loading ? 'Finding...' : 'Find Route' }}
+        </button>
+      </div>
+
+      <div v-if="error" class="error">{{ error }}</div>
+
+      <div v-if="routes.length" class="routes">
+        <div
+          v-for="route in routes"
+          :key="route.id"
+          class="route-card"
+          :class="{
+            selected: selectedRoute?.id === route.id,
+            recommended: route.isRecommended,
+          }"
+          @click="selectRoute(route)"
+        >
+          <div class="route-header">
+            <span v-if="route.isRecommended" class="badge">Recommended</span>
+            <span class="time">{{ formatTime(route.durationSeconds) }}</span>
+          </div>
+          <div class="route-stats">
+            <span>{{ (route.distanceMeters / 1000).toFixed(1) }} km</span>
+            <span
+              :class="{
+                warn: route.cameraExposure.totalCameras > 0,
+                safe: route.cameraExposure.totalCameras === 0,
+              }"
+            >
+              {{ route.cameraExposure.totalCameras }} cameras
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="selectedRoute" class="camera-list">
+        <h3>Cameras on route</h3>
+        <div
+          v-for="cam in selectedRoute.cameraExposure.cameras"
+          :key="cam.osmId"
+          class="camera-item"
+        >
+          <span class="dist">{{ cam.distanceMeters }}m</span>
+          <span class="op">{{ cam.operator }}</span>
+          <span v-if="cam.inFov" class="fov">In FOV</span>
+        </div>
+        <p v-if="selectedRoute.cameraExposure.totalCameras === 0" class="safe-msg">
+          No cameras detected on this route
+        </p>
       </div>
     </div>
+
+    <div id="map" ref="mapEl"></div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import { fetchCameras, getRouteBbox } from './utils/overpass.js'
+import { getRoutes } from './utils/routing.js'
+import { rankRoutes } from './utils/scorer.js'
 
-const start = ref({ lat: 40.7128, lon: -74.006 })
-const end = ref({ lat: 40.7484, lon: -73.9857 })
-const avoidanceLevel = ref('balanced')
-const routes = ref([])
-const selectedRoute = ref(null)
+const mapEl = ref(null)
+const startLat = ref('40.7128')
+const startLon = ref('-74.0060')
+const endLat = ref('40.7484')
+const endLon = ref('-73.9857')
 const loading = ref(false)
 const error = ref(null)
+const routes = ref([])
+const selectedRoute = ref(null)
 
-function formatTime(seconds) {
-  const mins = Math.round(seconds / 60)
-  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`
+let map,
+  routeLayers = [],
+  cameraLayer = null
+
+const ROUTE_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b']
+
+onMounted(() => {
+  map = L.map(mapEl.value).setView([40.73, -73.99], 13)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+  }).addTo(map)
+  cameraLayer = L.layerGroup().addTo(map)
+})
+
+function clearRoutes() {
+  routeLayers.forEach((l) => map.removeLayer(l))
+  routeLayers = []
+  cameraLayer.clearLayers()
 }
 
-async function calculateRoute() {
+function selectRoute(route) {
+  selectedRoute.value = route
+  routeLayers.forEach((l, i) => {
+    l.setStyle({ weight: routes.value[i].id === route.id ? 6 : 3, opacity: routes.value[i].id === route.id ? 1 : 0.4 })
+  })
+}
+
+function drawCameras(cameras) {
+  const camIcon = L.divIcon({
+    className: 'cam-marker',
+    html: '<div style="background:#ef4444;width:10px;height:10px;border-radius:50%;border:2px solid white;"></div>',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  })
+  cameras.forEach((cam) => {
+    L.marker([cam.lat, cam.lon], { icon: camIcon })
+      .bindPopup(`<b>${cam.operator}</b><br>${cam.type}`)
+      .addTo(cameraLayer)
+  })
+}
+
+function drawRoutes() {
+  clearRoutes()
+  routes.value.forEach((route, i) => {
+    const polyline = L.polyline(route.geometry, {
+      color: ROUTE_COLORS[i] || '#666',
+      weight: route.isRecommended ? 6 : 3,
+      opacity: route.isRecommended ? 1 : 0.6,
+    })
+      .on('click', () => selectRoute(route))
+      .addTo(map)
+    routeLayers.push(polyline)
+  })
+  if (routes.value.length) {
+    map.fitBounds(L.polyline(routes.value[0].geometry).getBounds(), { padding: [40, 40] })
+  }
+}
+
+async function findRoute() {
   loading.value = true
   error.value = null
+  routes.value = []
+  selectedRoute.value = null
+  clearRoutes()
+
   try {
-    const res = await fetch('http://localhost:8000/api/v1/route', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        start: start.value,
-        end: end.value,
-        avoidance_level: avoidanceLevel.value,
-      }),
-    })
-    if (!res.ok) throw new Error(`API error: ${res.status}`)
-    const data = await res.json()
-    routes.value = data.routes
+    const start = { lat: parseFloat(startLat.value), lon: parseFloat(startLon.value) }
+    const end = { lat: parseFloat(endLat.value), lon: parseFloat(endLon.value) }
+
+    if (isNaN(start.lat) || isNaN(start.lon) || isNaN(end.lat) || isNaN(end.lon)) {
+      throw new Error('Invalid coordinates')
+    }
+
+    const [rawRoutes, cameras] = await Promise.all([
+      getRoutes(start, end, 3),
+      fetchCameras(getRouteBbox(start, end)),
+    ])
+
+    drawCameras(cameras)
+    routes.value = rankRoutes(rawRoutes, cameras)
+    selectedRoute.value = routes.value.find((r) => r.isRecommended) || routes.value[0]
+    drawRoutes()
   } catch (e) {
     error.value = e.message
   } finally {
     loading.value = false
   }
 }
+
+function formatTime(seconds) {
+  const mins = Math.round(seconds / 60)
+  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`
+}
 </script>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.sidebar {
+  width: 340px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+h1 {
+  font-size: 1.5rem;
+  color: #f8fafc;
+}
+
+.subtitle {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  margin-bottom: 20px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.form label {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-top: 8px;
+}
+
+.form input {
+  padding: 8px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #1e293b;
+  color: #f1f5f9;
+  font-size: 0.9rem;
+}
+
+.form button {
+  margin-top: 12px;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  background: #3b82f6;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error {
+  background: #7f1d1d;
+  color: #fca5a5;
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+}
+
+.routes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.route-card {
+  background: #1e293b;
+  border: 2px solid #334155;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.route-card.selected {
+  border-color: #3b82f6;
+}
+
+.route-card.recommended {
+  border-color: #22c55e;
+}
+
+.route-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge {
+  background: #22c55e;
+  color: #052e16;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.time {
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.route-stats {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.route-stats .warn {
+  color: #f59e0b;
+}
+
+.route-stats .safe {
+  color: #22c55e;
+}
+
+.camera-list h3 {
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+  color: #cbd5e1;
+}
+
+.camera-item {
+  display: flex;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #1e293b;
+  font-size: 0.8rem;
+}
+
+.camera-item .dist {
+  color: #f59e0b;
+  min-width: 45px;
+}
+
+.camera-item .op {
+  color: #94a3b8;
+  flex: 1;
+}
+
+.camera-item .fov {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.safe-msg {
+  color: #22c55e;
+  font-size: 0.85rem;
+}
+
+#map {
+  flex: 1;
+}
+
+.cam-marker {
+  background: none !important;
+  border: none !important;
+}
+</style>

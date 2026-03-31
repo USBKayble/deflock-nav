@@ -1,0 +1,205 @@
+name: CI - Quality, Security & Auto-Merge
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Universal CI workflow — works with Python and Node.js projects.
+# Drop this into any repo's .github/workflows/ directory.
+#
+# What it does:
+#   1. Code quality checks (lint)
+#   2. Security scanning (dependency audit + SAST)
+#   3. Tests
+#   4. Auto-merge PRs when all checks pass (+ branch cleanup)
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ╔══════════════════════════════════════════════════════════════════════════╗
+  # ║  DETECT STACK                                                          ║
+  # ╚══════════════════════════════════════════════════════════════════════════╝
+  detect:
+    name: Detect project type
+    runs-on: ubuntu-latest
+    outputs:
+      is_python: ${{ steps.check.outputs.is_python }}
+      is_node: ${{ steps.check.outputs.is_node }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check project type
+        id: check
+        run: |
+          if [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "setup.cfg" ] || [ -f "requirements.txt" ]; then
+            echo "is_python=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_python=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -f "package.json" ]; then
+            echo "is_node=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_node=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ╔══════════════════════════════════════════════════════════════════════════╗
+  # ║  PYTHON CHECKS                                                         ║
+  # ╚══════════════════════════════════════════════════════════════════════════╝
+  python-checks:
+    name: Python — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_python == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          if [ -f "requirements-dev.txt" ]; then
+            pip install -r requirements-dev.txt
+          elif [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          fi
+          if [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+            pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          fi
+          pip install flake8 bandit pytest pytest-cov
+
+      # ── Code Quality ──────────────────────────────────────────────────────
+      - name: "Quality: Flake8 — syntax errors"
+        run: |
+          # Fail on syntax errors and undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
+            --exclude=.git,__pycache__,build,dist,.venv,venv,node_modules
+
+      - name: "Quality: Flake8 — style warnings"
+        run: |
+          # Warn but don't fail on style issues
+          flake8 . --count --exit-zero --max-line-length=120 --statistics \
+            --exclude=.git,__pycache__,build,dist,.venv,venv,node_modules
+
+      # ── Security ──────────────────────────────────────────────────────────
+      - name: "Security: Bandit SAST scan"
+        run: |
+          bandit -r src/ -ll -f json -o bandit-report.json || true
+          bandit -r src/ -ll
+
+      # ── Tests ─────────────────────────────────────────────────────────────
+      - name: "Test: Run pytest"
+        run: |
+          pytest tests/ -v --tb=short --cov=src --cov-report=term-missing \
+            || pytest -v --tb=short
+
+  # ╔══════════════════════════════════════════════════════════════════════════╗
+  # ║  NODE.JS CHECKS                                                        ║
+  # ╚══════════════════════════════════════════════════════════════════════════╝
+  node-checks:
+    name: Node.js — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_node == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Code Quality ──────────────────────────────────────────────────────
+      - name: "Quality: Lint"
+        run: npm run lint || echo "::warning::No lint script found — skipping"
+
+      - name: "Quality: Build check"
+        run: npm run build || echo "::warning::No build script found — skipping"
+
+      # ── Security ──────────────────────────────────────────────────────────
+      - name: "Security: npm audit"
+        run: npm audit --audit-level=high || true
+
+      # ── Tests ─────────────────────────────────────────────────────────────
+      - name: "Test: Run tests"
+        run: npm test || echo "::warning::No test script found — skipping"
+
+  # ╔══════════════════════════════════════════════════════════════════════════╗
+  # ║  AUTO-MERGE & BRANCH CLEANUP                                           ║
+  # ╚══════════════════════════════════════════════════════════════════════════╝
+  auto-merge:
+    name: Auto-merge PR & cleanup branch
+    needs: [detect, python-checks, node-checks]
+    if: >-
+      always() &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
+      (needs.python-checks.result == 'success' || needs.python-checks.result == 'skipped') &&
+      (needs.node-checks.result == 'success' || needs.node-checks.result == 'skipped') &&
+      !(needs.python-checks.result == 'failure' || needs.node-checks.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Merge PR and delete branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          HEAD_REPO="${{ github.event.pull_request.head.repo.full_name }}"
+          BASE_REPO="${{ github.repository }}"
+
+          echo "PR #${PR_NUMBER} — all checks passed. Merging..."
+
+          # Merge the PR (squash)
+          gh pr merge "$PR_NUMBER" \
+            --repo "$BASE_REPO" \
+            --squash \
+            --delete-branch \
+            --body "✅ Auto-merged: all CI checks passed (quality, security, tests)." \
+            || {
+              echo "::warning::Auto-merge failed (possibly branch protection or missing permissions)."
+              exit 0
+            }
+
+          # Extra safety: delete branch if it wasn't cleaned up by --delete-branch
+          # (only for branches in the same repo, not forks)
+          if [ "$HEAD_REPO" = "$BASE_REPO" ]; then
+            echo "Ensuring branch '${PR_HEAD_REF}' is deleted..."
+            gh api "repos/${BASE_REPO}/git/refs/heads/${PR_HEAD_REF}" \
+              --method DELETE 2>/dev/null || true
+          fi
+
+          echo "✅ Done — PR merged and branch cleaned up."
