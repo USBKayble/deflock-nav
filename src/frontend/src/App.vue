@@ -7,30 +7,16 @@
       <div class="form">
         <label>Start</label>
         <input
-          v-model="startLat"
-          type="number"
-          step="0.0001"
-          placeholder="Latitude"
-        />
-        <input
-          v-model="startLon"
-          type="number"
-          step="0.0001"
-          placeholder="Longitude"
+          v-model="startQuery"
+          type="text"
+          placeholder="Location (e.g. My Location, Times Square)"
         />
 
         <label>End</label>
         <input
-          v-model="endLat"
-          type="number"
-          step="0.0001"
-          placeholder="Latitude"
-        />
-        <input
-          v-model="endLon"
-          type="number"
-          step="0.0001"
-          placeholder="Longitude"
+          v-model="endQuery"
+          type="text"
+          placeholder="Location (e.g. Central Park)"
         />
 
         <button @click="findRoute" :disabled="loading">
@@ -96,12 +82,13 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { fetchCameras, getRouteBbox } from './utils/overpass.js'
 import { getRoutes } from './utils/routing.js'
+import { geocode } from './utils/geocoding.js'
 
 const mapEl = ref(null)
-const startLat = ref('40.7128')
-const startLon = ref('-74.0060')
-const endLat = ref('40.7484')
-const endLon = ref('-73.9857')
+const startQuery = ref('')
+const endQuery = ref('')
+const startCoords = ref(null)
+
 const loading = ref(false)
 const error = ref(null)
 const routes = ref([])
@@ -119,6 +106,22 @@ onMounted(() => {
     attribution: '© OpenStreetMap',
   }).addTo(map)
   cameraLayer = L.layerGroup().addTo(map)
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        startCoords.value = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude
+        }
+        startQuery.value = 'My Location'
+        map.setView([position.coords.latitude, position.coords.longitude], 13)
+      },
+      (err) => {
+        console.warn('Geolocation error:', err)
+      }
+    )
+  }
 })
 
 function clearRoutes() {
@@ -173,8 +176,18 @@ async function findRoute() {
   clearRoutes()
 
   try {
-    const start = { lat: parseFloat(startLat.value), lon: parseFloat(startLon.value) }
-    const end = { lat: parseFloat(endLat.value), lon: parseFloat(endLon.value) }
+    let start = null
+    let end = null
+
+    if (startQuery.value.trim().toLowerCase() === 'my location' && startCoords.value) {
+      start = startCoords.value
+    } else {
+      start = await geocode(startQuery.value)
+      if (!start) throw new Error(`Could not find location: ${startQuery.value}`)
+    }
+
+    end = await geocode(endQuery.value)
+    if (!end) throw new Error(`Could not find location: ${endQuery.value}`)
 
     if (isNaN(start.lat) || isNaN(start.lon) || isNaN(end.lat) || isNaN(end.lon)) {
       throw new Error('Invalid coordinates')
