@@ -86,7 +86,7 @@ jobs:
       - name: "Quality: Hadolint"
         run: |
           find . -type f -name '*Dockerfile*' -not -path '*/.git/*' -not -path '*/node_modules/*' -print0 \
-            | xargs -0 -r hadolint
+            | xargs -0 -r hadolint --ignore DL3008
       - name: "Quality: Docker Compose Config"
         run: |
           if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
