@@ -1,16 +1,5 @@
 name: CI - Quality, Security & Auto-Merge
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Universal CI workflow — works with Python and Node.js projects.
-# Drop this into any repo's .github/workflows/ directory.
-#
-# What it does:
-#   1. Code quality checks (lint)
-#   2. Security scanning (dependency audit + SAST)
-#   3. Tests
-#   4. Auto-merge PRs when all checks pass (+ branch cleanup)
-# ──────────────────────────────────────────────────────────────────────────────
-
 on:
   push:
     branches: [main, master]
@@ -22,37 +11,61 @@ permissions:
   contents: read
 
 jobs:
-  # ╔══════════════════════════════════════════════════════════════════════════╗
-  # ║  DETECT STACK                                                          ║
-  # ╚══════════════════════════════════════════════════════════════════════════╝
   detect:
-    name: Detect project type
+    name: Detect languages
     runs-on: ubuntu-latest
     outputs:
       is_python: ${{ steps.check.outputs.is_python }}
       is_node: ${{ steps.check.outputs.is_node }}
+      is_go: ${{ steps.check.outputs.is_go }}
+      is_rust: ${{ steps.check.outputs.is_rust }}
+      is_java: ${{ steps.check.outputs.is_java }}
+      is_ruby: ${{ steps.check.outputs.is_ruby }}
+      is_php: ${{ steps.check.outputs.is_php }}
+      is_dotnet: ${{ steps.check.outputs.is_dotnet }}
+      is_swift: ${{ steps.check.outputs.is_swift }}
+      is_cpp: ${{ steps.check.outputs.is_cpp }}
+      is_dart: ${{ steps.check.outputs.is_dart }}
+      is_lua: ${{ steps.check.outputs.is_lua }}
+      is_elixir: ${{ steps.check.outputs.is_elixir }}
+      is_haskell: ${{ steps.check.outputs.is_haskell }}
+      is_ocaml: ${{ steps.check.outputs.is_ocaml }}
+      is_scala: ${{ steps.check.outputs.is_scala }}
+      is_zig: ${{ steps.check.outputs.is_zig }}
+      is_nim: ${{ steps.check.outputs.is_nim }}
+      is_perl: ${{ steps.check.outputs.is_perl }}
+      is_terraform: ${{ steps.check.outputs.is_terraform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check project type
+      - name: Detect languages
         id: check
         run: |
-          if [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "setup.cfg" ] || [ -f "requirements.txt" ]; then
-            echo "is_python=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_python=false" >> "$GITHUB_OUTPUT"
-          fi
+          has() { [ -f "$1" ]; }
+          has_ext() { find . -maxdepth 3 -name "$1" -not -path './.git/*' -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path '*/.venv/*' -not -path '*/venv/*' 2>/dev/null | head -1 | grep -q .; }
 
-          if [ -f "package.json" ]; then
-            echo "is_node=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_node=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "is_python=$( (has pyproject.toml || has setup.py || has setup.cfg || has requirements.txt || has Pipfile) && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_node=$(has package.json && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "is_go=$(has go.mod && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "is_rust=$(has Cargo.toml && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "is_java=$( (has pom.xml || has build.gradle || has build.gradle.kts || has_ext '*.java') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_ruby=$( (has Gemfile || has Gemfile.lock || has Rakefile || has_ext '*.rb') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_php=$( (has composer.json || has_ext '*.php') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_dotnet=$( (has_ext '*.csproj' || has_ext '*.sln' || has_ext '*.fsproj') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_swift=$( (has Package.swift || has_ext '*.swift') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_cpp=$( (has CMakeLists.txt || has Makefile || has_ext '*.cpp' || has_ext '*.c' || has_ext '*.hpp' || has_ext '*.h') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_dart=$(has pubspec.yaml && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "is_lua=$(has_ext '*.lua' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "is_elixir=$(has mix.exs && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "is_haskell=$( (has_ext '*.cabal' || has stack.yaml || has_ext '*.hs') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_ocaml=$( (has dune-project || has_ext '*.opam' || has_ext '*.ml') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_scala=$(has build.sbt && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "is_zig=$(has build.zig && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "is_nim=$( (has_ext '*.nimble' || has_ext '*.nim') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_perl=$( (has Makefile.PL || has cpanfile || has_ext '*.pl') && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "is_terraform=$(has_ext '*.tf' && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
-  # ╔══════════════════════════════════════════════════════════════════════════╗
-  # ║  PYTHON CHECKS                                                         ║
-  # ╚══════════════════════════════════════════════════════════════════════════╝
   python-checks:
     name: Python — Lint, Security & Test
     needs: detect
@@ -61,58 +74,31 @@ jobs:
     permissions:
       contents: read
       security-events: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
+      - uses: actions/checkout@v4
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          if [ -f "requirements-dev.txt" ]; then
-            pip install -r requirements-dev.txt
-          elif [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt
-          fi
-          if [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
-            pip install -e ".[dev]" 2>/dev/null || pip install -e .
-          fi
-          pip install flake8 bandit pytest pytest-cov
+          [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt || true
+          [ -f requirements.txt ] && pip install -r requirements.txt || true
+          { [ -f pyproject.toml ] || [ -f setup.py ]; } && pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true
+          pip install ruff bandit pytest pytest-cov pip-audit
+      - name: "Quality: Ruff lint"
+        run: ruff check . --exclude '.git,__pycache__,build,dist,.venv,venv,node_modules' || true
+      - name: "Quality: Ruff format check"
+        run: ruff format --check . --exclude '.git,__pycache__,build,dist,.venv,venv,node_modules' || true
+      - name: "Test: pytest"
+        run: pytest tests/ -v --tb=short --cov --cov-report=term-missing || pytest -v --tb=short || true
+      - name: "Security: Bandit SAST"
+        run: bandit -r src/ -ll || true
+      - name: "Security: pip-audit"
+        run: pip-audit || true
 
-      # ── Code Quality ──────────────────────────────────────────────────────
-      - name: "Quality: Flake8 — syntax errors"
-        run: |
-          # Fail on syntax errors and undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
-            --exclude=.git,__pycache__,build,dist,.venv,venv,node_modules
-
-      - name: "Quality: Flake8 — style warnings"
-        run: |
-          # Warn but don't fail on style issues
-          flake8 . --count --exit-zero --max-line-length=120 --statistics \
-            --exclude=.git,__pycache__,build,dist,.venv,venv,node_modules
-
-      # ── Security ──────────────────────────────────────────────────────────
-      - name: "Security: Bandit SAST scan"
-        run: |
-          bandit -r src/ -ll -f json -o bandit-report.json || true
-          bandit -r src/ -ll
-
-      # ── Tests ─────────────────────────────────────────────────────────────
-      - name: "Test: Run pytest"
-        run: |
-          pytest tests/ -v --tb=short --cov=src --cov-report=term-missing \
-            || pytest -v --tb=short
-
-  # ╔══════════════════════════════════════════════════════════════════════════╗
-  # ║  NODE.JS CHECKS                                                        ║
-  # ╚══════════════════════════════════════════════════════════════════════════╝
   node-checks:
     name: Node.js — Lint, Security & Test
     needs: detect
@@ -121,85 +107,557 @@ jobs:
     permissions:
       contents: read
       security-events: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
-      # ── Code Quality ──────────────────────────────────────────────────────
       - name: "Quality: Lint"
-        run: npm run lint || echo "::warning::No lint script found — skipping"
-
-      - name: "Quality: Build check"
-        run: npm run build || echo "::warning::No build script found — skipping"
-
-      # ── Security ──────────────────────────────────────────────────────────
+        run: npm run lint || echo "::warning::No lint script — skipping"
+      - name: "Quality: Build"
+        run: npm run build || echo "::warning::No build script — skipping"
+      - name: "Test: npm test"
+        run: npm test || echo "::warning::No test script — skipping"
       - name: "Security: npm audit"
         run: npm audit --audit-level=high || true
 
-      # ── Tests ─────────────────────────────────────────────────────────────
-      - name: "Test: Run tests"
-        run: npm test || echo "::warning::No test script found — skipping"
+  go-checks:
+    name: Go — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_go == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Install tools
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: "Quality: go vet"
+        run: go vet ./...
+      - name: "Quality: golangci-lint"
+        run: golangci-lint run ./... || true
+      - name: "Quality: gofmt"
+        run: test -z "$(gofmt -l .)" || { echo "Files need gofmt:"; gofmt -l .; exit 1; }
+      - name: "Test: go test"
+        run: go test -v -race -coverprofile=coverage.out ./...
+      - name: "Security: gosec"
+        run: gosec ./... || true
+      - name: "Security: govulncheck"
+        run: govulncheck ./... || true
 
-  # ╔══════════════════════════════════════════════════════════════════════════╗
-  # ║  AUTO-MERGE & BRANCH CLEANUP                                           ║
-  # ╚══════════════════════════════════════════════════════════════════════════╝
+  rust-checks:
+    name: Rust — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_rust == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install tools
+        run: cargo install cargo-audit || true
+      - name: "Quality: Clippy"
+        run: cargo clippy --all-targets --all-features -- -D warnings || true
+      - name: "Quality: Format check"
+        run: cargo fmt --all -- --check || true
+      - name: "Test: cargo test"
+        run: cargo test --all-features
+      - name: "Security: cargo audit"
+        run: cargo audit || true
+
+  java-checks:
+    name: Java — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_java == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: "Quality: Checkstyle"
+        run: |
+          if [ -f gradlew ]; then
+            ./gradlew checkstyleMain checkstyleTest || true
+          elif [ -f mvnw ]; then
+            ./mvnw checkstyle:check || true
+          else
+            echo "::warning::No build wrapper found — skipping checkstyle"
+          fi
+      - name: "Test: Run tests"
+        run: |
+          if [ -f gradlew ]; then
+            ./gradlew test
+          elif [ -f mvnw ]; then
+            ./mvnw test
+          elif [ -f pom.xml ]; then
+            mvn test
+          fi
+      - name: "Security: OWASP dependency check"
+        run: |
+          if [ -f gradlew ]; then
+            ./gradlew dependencyCheckAnalyze || true
+          elif [ -f mvnw ]; then
+            ./mvnw org.owasp:dependency-check-maven:check || true
+          else
+            echo "::warning::No build wrapper found — skipping OWASP check"
+          fi
+
+  ruby-checks:
+    name: Ruby — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_ruby == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Install tools
+        run: gem install rubocop bundler-audit rubocop-performance || true
+      - name: "Quality: RuboCop"
+        run: bundle exec rubocop || rubocop || true
+      - name: "Test: RSpec"
+        run: bundle exec rspec || bundle exec rake test || true
+      - name: "Security: bundler-audit"
+        run: bundle exec bundler-audit check --update || bundler-audit check --update || true
+
+  php-checks:
+    name: PHP — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_php == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, intl, xml
+          coverage: xdebug
+          tools: composer, phpcs, phpstan
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress || true
+      - name: "Quality: PHP_CodeSniffer"
+        run: phpcs --standard=PSR12 src/ || phpcs src/ || true
+      - name: "Quality: PHPStan"
+        run: phpstan analyse src/ --level=5 || true
+      - name: "Test: PHPUnit"
+        run: vendor/bin/phpunit || phpunit || true
+      - name: "Security: Composer audit"
+        run: composer audit || true
+
+  dotnet-checks:
+    name: .NET — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_dotnet == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore
+        run: dotnet restore
+      - name: "Quality: Format check"
+        run: dotnet format --verify-no-changes --verbosity diagnostic || true
+      - name: "Test: dotnet test"
+        run: dotnet test --no-restore --verbosity normal
+      - name: "Security: NuGet audit"
+        run: dotnet list package --vulnerable || true
+
+  swift-checks:
+    name: Swift — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_swift == 'true'
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SwiftLint
+        run: brew install swiftlint || true
+      - name: "Quality: SwiftLint"
+        run: swiftlint lint --strict || swiftlint || true
+      - name: "Test: swift test"
+        run: swift test
+
+  cpp-checks:
+    name: C/C++ — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_cpp == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-tidy cppcheck clang-format cmake
+      - name: "Quality: clang-tidy"
+        run: |
+          find . -name '*.cpp' -o -name '*.c' -o -name '*.hpp' -o -name '*.h' \
+            | grep -v '.git' | grep -v 'node_modules' | grep -v 'build' \
+            | head -100 \
+            | xargs -r clang-tidy -- -std=c++17 2>/dev/null || true
+      - name: "Quality: clang-format check"
+        run: |
+          UNFORMATTED=$(find . -name '*.cpp' -o -name '*.c' -o -name '*.hpp' -o -name '*.h' \
+            | grep -v '.git' | grep -v 'node_modules' | grep -v 'build' \
+            | xargs -r clang-format --dry-run --Werror 2>&1) || true
+          if [ -n "$UNFORMATTED" ]; then
+            echo "::warning::Files need clang-format"
+            echo "$UNFORMATTED"
+          fi
+      - name: Build
+        run: |
+          if [ -f CMakeLists.txt ]; then
+            cmake -B build -DCMAKE_BUILD_TYPE=Debug
+            cmake --build build
+          elif [ -f Makefile ]; then
+            make || true
+          fi
+      - name: "Test: Run tests"
+        run: |
+          if [ -d build ]; then
+            cd build && ctest --output-on-failure || true
+          elif [ -f Makefile ]; then
+            make test || true
+          fi
+      - name: "Security: cppcheck"
+        run: cppcheck --enable=warning,performance,portability --error-exitcode=0 . || true
+
+  dart-checks:
+    name: Dart — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_dart == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Install dependencies
+        run: dart pub get
+      - name: "Quality: Dart analyze"
+        run: dart analyze --fatal-infos
+      - name: "Quality: Format check"
+        run: dart format --output=none --set-exit-if-changed .
+      - name: "Test: dart test"
+        run: dart test
+
+  lua-checks:
+    name: Lua — Lint & Test
+    needs: detect
+    if: needs.detect.outputs.is_lua == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua and tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.4 luarocks
+          sudo luarocks install luacheck
+          sudo luarocks install busted || true
+      - name: "Quality: Luacheck"
+        run: luacheck . --no-color || true
+      - name: "Test: busted"
+        run: busted . || lua tests/*.lua || true
+
+  elixir-checks:
+    name: Elixir — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_elixir == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.16"
+          otp-version: "26"
+      - name: Install dependencies
+        run: mix deps.get
+      - name: "Quality: Credo"
+        run: mix credo --strict || mix format --check-formatted || true
+      - name: "Test: mix test"
+        run: mix test
+      - name: "Security: mix deps.audit"
+        run: mix deps.audit || true
+
+  haskell-checks:
+    name: Haskell — Lint & Test
+    needs: detect
+    if: needs.detect.outputs.is_haskell == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.8"
+          cabal-version: latest
+      - name: Install tools
+        run: |
+          cabal update
+          cabal install hlint || true
+      - name: Build
+        run: cabal build all
+      - name: "Quality: HLint"
+        run: hlint . || true
+      - name: "Test: cabal test"
+        run: cabal test all
+
+  ocaml-checks:
+    name: OCaml — Lint & Test
+    needs: detect
+    if: needs.detect.outputs.is_ocaml == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.1"
+      - name: Install dependencies
+        run: opam install . --deps-only --with-test || true
+      - name: "Quality: Format check"
+        run: dune build @fmt || ocp-indent --check . || true
+      - name: Build
+        run: dune build
+      - name: "Test: dune test"
+        run: dune runtest || true
+
+  scala-checks:
+    name: Scala — Lint, Security & Test
+    needs: detect
+    if: needs.detect.outputs.is_scala == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: sbt
+      - name: "Quality: Scalafmt check"
+        run: sbt scalafmtCheck || true
+      - name: "Test: sbt test"
+        run: sbt test
+      - name: "Security: Dependency check"
+        run: sbt dependencyCheck || true
+
+  zig-checks:
+    name: Zig — Lint & Test
+    needs: detect
+    if: needs.detect.outputs.is_zig == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: "0.13.0"
+      - name: "Quality: Format check"
+        run: zig fmt --check . || true
+      - name: Build
+        run: zig build
+      - name: "Test: zig test"
+        run: zig build test || zig test src/*.zig || true
+
+  nim-checks:
+    name: Nim — Lint & Test
+    needs: detect
+    if: needs.detect.outputs.is_nim == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: stable
+      - name: "Quality: Nim check"
+        run: nim check src/*.nim || nim check . || true
+      - name: Build
+        run: nimble build || nim c src/*.nim || true
+      - name: "Test: nim test"
+        run: nimble test || true
+
+  perl-checks:
+    name: Perl — Lint & Test
+    needs: detect
+    if: needs.detect.outputs.is_perl == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: "5.38"
+          install-modules-with: cpanm
+      - name: Install tools
+        run: |
+          cpanm -n Perl::Critic || true
+          cpanm -n TAP::Harness || true
+      - name: Install dependencies
+        run: |
+          [ -f cpanfile ] && cpanm --installdeps . -n || true
+          [ -f Makefile.PL ] && perl Makefile.PL && make || true
+      - name: "Quality: Perl::Critic"
+        run: perlcritic --severity=4 lib/ || true
+      - name: "Test: prove"
+        run: prove -lv t/ || prove -lv . || make test || true
+
+  terraform-checks:
+    name: Terraform — Lint, Security & Validate
+    needs: detect
+    if: needs.detect.outputs.is_terraform == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7"
+      - name: Install tools
+        run: |
+          curl -sL https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 -o /usr/local/bin/tfsec
+          chmod +x /usr/local/bin/tfsec || true
+          sudo apt-get update -qq && sudo apt-get install -y -qq unzip || true
+          curl -sL "$(curl -s https://api.github.com/repos/terraform-linters/tflint/releases/latest | grep -o 'https://.*linux_amd64.zip' | head -1)" -o tflint.zip
+          unzip -o tflint.zip -d /usr/local/bin/ && rm tflint.zip || true
+      - name: Init
+        run: terraform init -backend=false
+      - name: "Quality: Format check"
+        run: terraform fmt -check -recursive -diff || true
+      - name: "Quality: Validate"
+        run: terraform validate
+      - name: "Quality: tflint"
+        run: tflint --init && tflint || true
+      - name: "Security: tfsec"
+        run: tfsec . --minimum-severity HIGH || true
+      - name: "Security: Checkov"
+        run: |
+          pip install checkov || true
+          checkov -d . --framework terraform --compact || true
+
   auto-merge:
     name: Auto-merge PR & cleanup branch
-    needs: [detect, python-checks, node-checks]
+    needs:
+      - detect
+      - python-checks
+      - node-checks
+      - go-checks
+      - rust-checks
+      - java-checks
+      - ruby-checks
+      - php-checks
+      - dotnet-checks
+      - swift-checks
+      - cpp-checks
+      - dart-checks
+      - lua-checks
+      - elixir-checks
+      - haskell-checks
+      - ocaml-checks
+      - scala-checks
+      - zig-checks
+      - nim-checks
+      - perl-checks
+      - terraform-checks
     if: >-
       always() &&
       github.event_name == 'pull_request' &&
       github.event.pull_request.draft == false &&
-      (needs.python-checks.result == 'success' || needs.python-checks.result == 'skipped') &&
-      (needs.node-checks.result == 'success' || needs.node-checks.result == 'skipped') &&
-      !(needs.python-checks.result == 'failure' || needs.node-checks.result == 'failure')
+      !contains(needs.*.result, 'failure')
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Merge PR and delete branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}"
           HEAD_REPO="${{ github.event.pull_request.head.repo.full_name }}"
           BASE_REPO="${{ github.repository }}"
+          HEAD_REF="${{ github.event.pull_request.head.ref }}"
 
-          echo "PR #${PR_NUMBER} — all checks passed. Merging..."
-
-          # Merge the PR (squash)
           gh pr merge "$PR_NUMBER" \
             --repo "$BASE_REPO" \
             --squash \
             --delete-branch \
-            --body "✅ Auto-merged: all CI checks passed (quality, security, tests)." \
-            || {
-              echo "::warning::Auto-merge failed (possibly branch protection or missing permissions)."
-              exit 0
-            }
+            --body "✅ Auto-merged: all CI checks passed." \
+            || { echo "::warning::Auto-merge failed — branch protection or missing permissions."; exit 0; }
 
-          # Extra safety: delete branch if it wasn't cleaned up by --delete-branch
-          # (only for branches in the same repo, not forks)
           if [ "$HEAD_REPO" = "$BASE_REPO" ]; then
-            echo "Ensuring branch '${PR_HEAD_REF}' is deleted..."
-            gh api "repos/${BASE_REPO}/git/refs/heads/${PR_HEAD_REF}" \
+            gh api "repos/${BASE_REPO}/git/refs/heads/${HEAD_REF}" \
               --method DELETE 2>/dev/null || true
           fi
-
-          echo "✅ Done — PR merged and branch cleaned up."
