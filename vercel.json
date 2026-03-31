@@ -1,5 +1,3 @@
 {
-  "installCommand": "cd src/frontend && npm install --include=dev",
-  "buildCommand": "cd src/frontend && npm run build",
   "outputDirectory": "src/frontend/dist"
 }

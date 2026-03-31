@@ -1,0 +1,10 @@
+{
+  "name": "deflock-nav-root",
+  "private": true,
+  "scripts": {
+    "install": "cd src/frontend && npm install --include=dev",
+    "build": "cd src/frontend && npm run build",
+    "lint": "cd src/frontend && npm run lint --if-present",
+    "test": "cd src/frontend && npm test --if-present"
+  }
+}

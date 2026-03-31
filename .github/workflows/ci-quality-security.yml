@@ -116,25 +116,15 @@ jobs:
           cache: npm
           cache-dependency-path: "**/package-lock.json"
       - name: Install dependencies
-        run: |
-          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
-          npm ci
+        run: npm ci
       - name: "Quality: Lint"
-        run: |
-          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
-          npm run lint || echo "::warning::No lint script — skipping"
+        run: npm run lint || echo "::warning::No lint script — skipping"
       - name: "Quality: Build"
-        run: |
-          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
-          npm run build || echo "::warning::No build script — skipping"
+        run: npm run build || echo "::warning::No build script — skipping"
       - name: "Test: npm test"
-        run: |
-          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
-          npm test || echo "::warning::No test script — skipping"
+        run: npm test || echo "::warning::No test script — skipping"
       - name: "Security: npm audit"
-        run: |
-          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
-          npm audit || true
+        run: npm audit || true
 
   go-checks:
     name: Go — Lint, Security & Test
