@@ -5,9 +5,9 @@ services:
   postgis:
     image: postgis/postgis:16-3.4
     environment:
-      POSTGRES_DB: deflock_nav
-      POSTGRES_USER: deflock
-      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: ${POSTGRES_DB:-deflock_nav}
+      POSTGRES_USER: ${POSTGRES_USER:-deflock}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev}
     ports:
       - "5432:5432"
     volumes:
@@ -40,7 +40,7 @@ services:
     # Build tiles on first run:
     # docker compose run valhalla valhalla_build_tiles -c /valhalla.json /data/region.osm.pbf
 
-  # FastAPI backend
+  # FastAPI backend (also serves the frontend UI)
   api:
     build:
       context: .
@@ -48,10 +48,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://deflock:localdev@postgis:5432/deflock_nav
-      - REDIS_URL=redis://redis:6379
-      - VALHALLA_URL=http://valhalla:8002
-      - ADMIN_TOKEN=localdev
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://deflock:localdev@postgis:5432/deflock_nav}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - VALHALLA_URL=${VALHALLA_URL:-http://valhalla:8002}
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-localdev}
     depends_on:
       postgis:
         condition: service_healthy
@@ -59,19 +59,6 @@ services:
         condition: service_started
     volumes:
       - ./src/api:/app/src/api
-    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-
-  # Vue frontend (dev mode)
-  frontend:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.frontend
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./src/frontend:/app
-      - /app/node_modules
-    command: npm run dev -- --host 0.0.0.0
 
 volumes:
   postgis_data:

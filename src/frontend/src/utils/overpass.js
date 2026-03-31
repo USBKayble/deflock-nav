@@ -1,34 +1,16 @@
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+// Assuming we are served from the same host, use relative path
+const API_URL = '/api/v1'
 
 export async function fetchCameras(bbox) {
   const [minLon, minLat, maxLon, maxLat] = bbox
-  const query = `
-    [out:json][timeout:30];
-    (
-      node["man_made"="surveillance"]["surveillance:type"="ALPR"](${minLat},${minLon},${maxLat},${maxLon});
-      node["man_made"="surveillance"]["surveillance:type"="camera"]["operator"~"Flock",i](${minLat},${minLon},${maxLat},${maxLon});
-    );
-    out body;
-  `
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(query)}`,
-  })
-  if (!res.ok) throw new Error(`Overpass API error: ${res.status}`)
+  const bboxStr = `${minLon},${minLat},${maxLon},${maxLat}`
+
+  const res = await fetch(`${API_URL}/cameras?bbox=${bboxStr}`)
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+
   const data = await res.json()
-  return data.elements
-    .filter((el) => el.type === 'node' && el.tags)
-    .map((el) => ({
-      osmId: el.id,
-      lat: el.lat,
-      lon: el.lon,
-      type: el.tags['surveillance:type'] || 'camera',
-      direction: el.tags['camera:direction']
-        ? parseInt(el.tags['camera:direction'], 10)
-        : null,
-      operator: el.tags.operator || 'Unknown',
-    }))
+  // The backend already returns the normalized format
+  return data
 }
 
 export function getRouteBbox(start, end, padding = 0.02) {

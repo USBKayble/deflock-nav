@@ -1,13 +1,21 @@
 from contextlib import asynccontextmanager
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from src.api.routes import routing, cameras
 
 
+from src.api.database import engine
+from src.api.models import Base
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     yield
 
 
@@ -31,3 +39,25 @@ app.include_router(cameras.router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# Serve static files from the Vue build directory
+# Use a static path relative to the app working directory or root
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "src", "frontend", "dist")
+
+# If the static directory doesn't exist (e.g., during development), we don't mount the static files
+# Docker build will ensure this directory exists in production
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    if full_path.startswith("api/"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    if not os.path.exists(STATIC_DIR):
+        return {"message": "Frontend not built yet. Run `npm run build` in src/frontend."}
+
+    file_path = os.path.join(STATIC_DIR, full_path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))

@@ -96,7 +96,6 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { fetchCameras, getRouteBbox } from './utils/overpass.js'
 import { getRoutes } from './utils/routing.js'
-import { rankRoutes } from './utils/scorer.js'
 
 const mapEl = ref(null)
 const startLat = ref('40.7128')
@@ -181,13 +180,33 @@ async function findRoute() {
       throw new Error('Invalid coordinates')
     }
 
-    const [rawRoutes, cameras] = await Promise.all([
+    const [scoredRoutes, cameras] = await Promise.all([
       getRoutes(start, end, 3),
       fetchCameras(getRouteBbox(start, end)),
     ])
 
     drawCameras(cameras)
-    routes.value = rankRoutes(rawRoutes, cameras)
+
+    // The backend now performs the routing and scoring logic
+    // We just map it to the frontend's expected properties
+    routes.value = scoredRoutes.map(r => ({
+      ...r,
+      cameraExposure: {
+        totalCameras: r.camera_exposure.total_cameras,
+        camerasInFov: r.camera_exposure.cameras_in_fov,
+        exposureScore: r.camera_exposure.exposure_score,
+        cameras: r.camera_exposure.cameras.map(c => ({
+          osmId: c.osmId,
+          distanceMeters: c.distanceMeters,
+          operator: c.operator,
+          inFov: c.inFov,
+        }))
+      },
+      isRecommended: r.is_recommended,
+      distanceMeters: r.distance_meters,
+      durationSeconds: r.duration_seconds
+    }))
+
     selectedRoute.value = routes.value.find((r) => r.isRecommended) || routes.value[0]
     drawRoutes()
   } catch (e) {
