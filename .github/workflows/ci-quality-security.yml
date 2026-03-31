@@ -46,7 +46,7 @@ jobs:
           has_ext() { find . -maxdepth 3 -name "$1" -not -path './.git/*' -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path '*/.venv/*' -not -path '*/venv/*' 2>/dev/null | head -1 | grep -q .; }
 
           echo "is_python=$( (has pyproject.toml || has setup.py || has setup.cfg || has requirements.txt || has Pipfile) && echo true || echo false )" >> "$GITHUB_OUTPUT"
-          echo "is_node=$(has package.json && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "is_node=$(has_ext package.json && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "is_go=$(has go.mod && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "is_rust=$(has Cargo.toml && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "is_java=$( (has pom.xml || has build.gradle || has build.gradle.kts || has_ext '*.java') && echo true || echo false )" >> "$GITHUB_OUTPUT"
@@ -114,16 +114,27 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+          cache-dependency-path: "**/package-lock.json"
       - name: Install dependencies
-        run: npm ci
+        run: |
+          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
+          npm ci
       - name: "Quality: Lint"
-        run: npm run lint || echo "::warning::No lint script — skipping"
+        run: |
+          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
+          npm run lint || echo "::warning::No lint script — skipping"
       - name: "Quality: Build"
-        run: npm run build || echo "::warning::No build script — skipping"
+        run: |
+          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
+          npm run build || echo "::warning::No build script — skipping"
       - name: "Test: npm test"
-        run: npm test || echo "::warning::No test script — skipping"
+        run: |
+          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
+          npm test || echo "::warning::No test script — skipping"
       - name: "Security: npm audit"
-        run: npm audit --audit-level=high || true
+        run: |
+          cd $(dirname $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1))
+          npm audit || true
 
   go-checks:
     name: Go — Lint, Security & Test
