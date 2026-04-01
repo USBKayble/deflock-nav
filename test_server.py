@@ -4,7 +4,7 @@ from multiprocessing import Process
 import time
 
 def run_server():
-    os.environ["DATABASE_URL"] = "postgresql+asyncpg://deflock:localdev@127.0.0.1:5432/deflock_nav"
+    os.environ["DATABASE_URL"] = "postgresql+asyncpg://dummy:dummy@127.0.0.1:5432/test_db"
     os.chdir(os.path.join(os.path.dirname(__file__), ".."))
     uvicorn.run("src.api.main:app", host="127.0.0.1", port=8000)
 
