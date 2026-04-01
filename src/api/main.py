@@ -55,8 +55,15 @@ async def serve_spa(full_path: str):
     if not os.path.exists(STATIC_DIR):
         return {"message": "Frontend not built yet. Run `npm run build` in src/frontend."}
 
+    static_dir_real = os.path.realpath(STATIC_DIR)
     file_path = os.path.join(STATIC_DIR, full_path)
-    if os.path.exists(file_path) and os.path.isfile(file_path):
-        return FileResponse(file_path)
+    file_path_real = os.path.realpath(file_path)
 
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    if os.path.commonpath([static_dir_real, file_path_real]) != static_dir_real:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    if os.path.exists(file_path_real) and os.path.isfile(file_path_real):
+        return FileResponse(file_path_real)
+
+    return FileResponse(os.path.join(static_dir_real, "index.html"))
