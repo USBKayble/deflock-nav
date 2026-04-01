@@ -1,6 +1,6 @@
 import httpx
 import math
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from src.api.config import settings
 
