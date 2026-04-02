@@ -10,7 +10,7 @@ from src.api.config import settings
 router = APIRouter(prefix="/api/v1")
 
 async def fetch_cameras_from_overpass(bbox: str) -> list[dict]:
-    min_lon, min_lat, max_lon, max_lat = bbox.split(",")
+    min_lon, min_lat, max_lon, max_lat = map(float, bbox.split(","))
     query = f"""
     [out:json][timeout:30];
     (
