@@ -1,5 +1,4 @@
 import httpx
-import json
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text, func
