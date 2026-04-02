@@ -81,13 +81,14 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * c
 
 
-def point_to_segment_distance(point, line_start, line_end) -> float:
+def point_to_segment_distance(point, line_start, line_end, dist12: float = None) -> float:
     lat, lon = point
     lat1, lon1 = line_start
     lat2, lon2 = line_end
 
     # Distance between points
-    dist12 = haversine(lat1, lon1, lat2, lon2)
+    if dist12 is None:
+        dist12 = haversine(lat1, lon1, lat2, lon2)
     dist13 = haversine(lat1, lon1, lat, lon)
     dist23 = haversine(lat2, lon2, lat, lon)
 
@@ -133,6 +134,11 @@ def score_route(route: dict, cameras: list[dict]) -> dict:
     exposed = []
     coords = route["geometry_decoded"]
 
+    segment_distances = [
+        haversine(coords[i][0], coords[i][1], coords[i + 1][0], coords[i + 1][1])
+        for i in range(len(coords) - 1)
+    ]
+
     for cam in cameras:
         min_dist = float("inf")
         is_in_fov = False
@@ -140,7 +146,7 @@ def score_route(route: dict, cameras: list[dict]) -> dict:
         for i in range(len(coords) - 1):
             # point_to_segment_distance expects (lat, lon) for all points
             dist = point_to_segment_distance(
-                (cam["lat"], cam["lon"]), coords[i], coords[i + 1]
+                (cam["lat"], cam["lon"]), coords[i], coords[i + 1], segment_distances[i]
             )
             if dist < min_dist:
                 min_dist = dist
