@@ -36,14 +36,6 @@ export function pointToSegmentDistance(p, p1, p2) {
   return haversine(p[0], p[1], x, y)
 }
 
-export function inFieldOfView(heading, camDirection, fov = 180) {
-  let diff = Math.abs(heading - camDirection) % 360
-  if (diff > 180) {
-    diff = 360 - diff
-  }
-  return diff <= fov / 2
-}
-
 export function decodePolyline(encoded) {
   const coords = []
   let lat = 0,
