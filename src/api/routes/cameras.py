@@ -73,10 +73,10 @@ async def sync_cameras_to_db(db: AsyncSession, bbox: str):
         await db.execute(stmt, {
             "osm_id": cam["osm_id"],
             "location": point,
-            "surveillance_type": "ALPR" if cam["type"] == "ALPR" else "camera",
+            "surveillance_type": ("ALPR" if cam["type"] == "ALPR" else "camera")[:50],
             "camera_direction": cam["direction"],
-            "camera_type": cam["type"],
-            "operator": cam["operator"]
+            "camera_type": cam["type"][:50] if cam["type"] else None,
+            "operator": cam["operator"][:255] if cam["operator"] else None
         })
     await db.commit()
 
