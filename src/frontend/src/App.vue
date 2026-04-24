@@ -145,8 +145,15 @@ function drawCameras(cameras) {
     iconAnchor: [7, 7],
   })
   cameras.forEach((cam) => {
+    const container = document.createElement('div')
+    const b = document.createElement('b')
+    b.textContent = cam.operator
+    container.appendChild(b)
+    container.appendChild(document.createElement('br'))
+    container.appendChild(document.createTextNode(cam.type))
+
     L.marker([cam.lat, cam.lon], { icon: camIcon })
-      .bindPopup(`<b>${cam.operator}</b><br>${cam.type}`)
+      .bindPopup(container)
       .addTo(cameraLayer)
   })
 }
